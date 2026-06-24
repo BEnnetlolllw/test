@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Karten drucken</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="print-page">
+  <div class="print-wrap no-print">
+    <div class="card" style="margin-bottom:16px">
+      <h2>Karten drucken</h2>
+      <p class="muted">Jede Karte enthält die Schüler-ID als QR-Code. Die Antwort ergibt sich aus der Drehung.</p>
+      <div class="row two" style="margin-top:12px">
+        <input id="codeInput" placeholder="Raumcode" />
+        <button class="btn-primary" onclick="loadCards()">Karten laden</button>
+      </div>
+      <div style="height:12px"></div>
+      <button class="btn-ghost" onclick="window.print()">Drucken</button>
+      <a class="btn-ghost" href="/host.html" style="text-decoration:none; display:inline-block; padding:12px 16px; border-radius:14px; margin-left:8px">Zurück</a>
+    </div>
+
+    <div id="output"></div>
+  </div>
+
+  <div id="printArea"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    async function loadCards() {
+      const code = document.getElementById("codeInput").value.trim().toUpperCase();
+      if (!code) return alert("Bitte Raumcode eingeben.");
+
+      const res = await fetch(`/api/room/${code}`);
+      if (!res.ok) return alert("Raum nicht gefunden.");
+
+      const data = await res.json();
+      const room = data.room;
+
+      const html = room.students.map(student => `
+        <div class="print-card">
+          <div class="card-top">
+            <div>
+              <div class="card-title">${escapeHtml(room.title)}</div>
+              <div class="card-id">${escapeHtml(student.name)} · ID ${student.id}</div>
+            </div>
+            <div class="card-id">Code: ${room.code}</div>
+          </div>
+
+          <div class="card-area">
+            <div class="corner top">A</div>
+            <div class="corner right">B</div>
+            <div class="corner bottom">C</div>
+            <div class="corner left">D</div>
+            <div class="qr" id="qr-${student.id}"></div>
+          </div>
+
+          <div class="center-note">Drehen: A oben · B rechts · C unten · D links</div>
+        </div>
+      `).join("");
+
+      document.getElementById("output").innerHTML = html;
+
+      for (const student of room.students) {
+        const el = document.getElementById(`qr-${student.id}`);
+        el.innerHTML = "";
+        new QRCode(el, {
+          text: student.id,
+          width: 300,
+          height: 300,
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    const params = new URLSearchParams(location.search);
+    const code = params.get("code");
+    if (code) {
+      document.getElementById("codeInput").value = code;
+      loadCards();
+    }
+  </script>
+</body>
+</html>
