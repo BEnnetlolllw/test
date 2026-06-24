@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schüleransicht – QR-Kahoot</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">Schüleransicht</div>
+      <div class="pill" id="roomPill">Noch nicht verbunden</div>
+    </div>
+
+    <div class="tabs">
+      <a class="tab" href="/host.html">Host</a>
+      <div class="tab active">Schüler</div>
+      <a class="tab" href="/" onclick="return false;">Start</a>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Beitreten</h2>
+        <p class="muted">Nur zum Mitlesen der Fragen und des Rankings.</p>
+
+        <div class="row two" style="margin-top:12px">
+          <input id="codeInput" placeholder="Raumcode" />
+          <input id="nameInput" placeholder="Dein Name" />
+        </div>
+
+        <div style="height:12px"></div>
+        <button class="btn-primary" onclick="joinRoom()">Beitreten</button>
+
+        <div style="height:16px"></div>
+        <div class="q-card">
+          <div class="small">Status</div>
+          <div id="statusText" class="question">Noch nicht beigetreten.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Aktuelle Frage</h2>
+        <div id="questionArea" class="small">Tritt zuerst bei.</div>
+        <div style="height:14px"></div>
+        <h3>Ranking</h3>
+        <div id="ranking" class="scoreboard"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let room = null;
+
+    socket.on("roomUpdate", (snapshot) => {
+      if (!room || room.code === snapshot.code) {
+        room = snapshot;
+        sessionStorage.setItem("studentRoomCode", room.code);
+        render();
+      }
+    });
+
+    async function joinRoom() {
+      const code = document.getElementById("codeInput").value.trim().toUpperCase();
+      const name = document.getElementById("nameInput").value.trim();
+
+      if (!code || !name) return alert("Bitte Code und Namen eingeben.");
+
+      socket.emit("joinRoom", { code, name }, (res) => {
+        if (!res?.ok) return alert(res?.message || "Raum nicht gefunden");
+        room = res.room;
+        sessionStorage.setItem("studentRoomCode", room.code);
+        render();
+      });
+    }
+
+    function render() {
+      if (!room) {
+        document.getElementById("roomPill").textContent = "Noch nicht verbunden";
+        document.getElementById("statusText").textContent = "Noch nicht beigetreten.";
+        document.getElementById("questionArea").textContent = "Tritt zuerst bei.";
+        document.getElementById("ranking").innerHTML = "";
+        return;
+      }
+
+      document.getElementById("roomPill").textContent = `${room.title} · ${room.code}`;
+
+      let status = "";
+      if (room.phase === "lobby") status = "Warte auf den Start.";
+      if (room.phase === "question") status = "Frage läuft.";
+      if (room.phase === "reveal") status = "Antworten wurden gesperrt.";
+      if (room.phase === "finished") status = "Quiz beendet.";
+      document.getElementById("statusText").textContent = status;
+
+      const q = room.questions[room.currentQuestionIndex];
+      document.getElementById("questionArea").innerHTML = q
+        ? `
+          <div class="small">Frage ${room.currentQuestionIndex + 1} von ${room.questions.length}</div>
+          <div style="margin-top:8px; font-size:28px; font-weight:800">${escapeHtml(q.text)}</div>
+          <div class="list" style="margin-top:14px">
+            ${q.answers.map((a, i) => `<div class="list-item"><strong>${String.fromCharCode(65 + i)}.</strong> ${escapeHtml(a)}</div>`).join("")}
+          </div>
+        `
+        : "Noch keine Frage aktiv.";
+
+      const ranking = [...room.students].sort((a, b) => b.score - a.score);
+      document.getElementById("ranking").innerHTML = ranking.length
+        ? ranking.map((s, i) => `
+            <div class="score-row">
+              <span>${i + 1}. ${escapeHtml(s.name)}</span>
+              <strong>${s.score}</strong>
+            </div>
+          `).join("")
+        : `<div class="score-row"><span>Noch kein Ranking</span><strong>0</strong></div>`;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function loadSaved() {
+      const code = sessionStorage.getItem("studentRoomCode");
+      if (!code) return;
+      const res = await fetch(`/api/room/${code}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      room = data.room;
+      document.getElementById("codeInput").value = room.code;
+      render();
+    }
+
+    loadSaved();
+  </script>
+</body>
+</html>
